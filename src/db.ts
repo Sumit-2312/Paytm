@@ -30,14 +30,14 @@ const userSchema = new Schema({
 
 const balanceSchema = new Schema({
     userId : {type:objectId,ref:'users'},
-    balance: {type:Number}
+    balance: {type:Number,default: 10000}
 })
 
 
 const userModel =  model('users',userSchema);
+const balanceModel = model('balance',balanceSchema);
 
 module.exports = {
     users: userModel,
-
-
+    balance: balanceModel
 };
