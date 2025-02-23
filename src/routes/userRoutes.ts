@@ -7,6 +7,28 @@ const {users,balance} = require('../db');
 import auth from '../auth'  
 
 
+router.get("/",auth, async(req,res)=>{
+    try{
+        const allUsers = await users.find();
+        if(allUsers.modifiedCount === 0){
+            res.status(200).json({
+                message:"No users are present"
+            });
+            return;
+        }
+        res.status(200).json({
+            message:"Fetched all users",
+            allUsers
+        });
+        return;
+    }
+    catch(error){
+        res.status(400).json({
+            error: error.message
+        });
+        return;
+    }
+})
 
 router.post('/signup', async (req,res)=>{
     const {firstName,lastName,password,email} = req.body;
