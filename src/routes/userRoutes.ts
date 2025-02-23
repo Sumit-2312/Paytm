@@ -1,6 +1,7 @@
 import express from 'express';
 const router = express.Router();
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
 const {users,balance} = require('../db');
 import auth from '../auth'  
@@ -125,64 +126,107 @@ router.post('/deposit', auth, async (req, res)=> {
     }
 });
 
-
-router.post("/payment",auth,async (req,res)=>{
+router.post('/withdraw', auth, async ( req , res)=>{
     try{
-        const {firstName,lastName,recieverFirstName,recieverLastName,amount} = req.body;
-        // we will first find the user who is going to make the payment
+        const {amount , firstName, lastName} = req.body;
         const user = await users.findOne({firstName,lastName});
-        // now we will fetch the balance sheet of the user and check if he have sufficient amount of money to pay or not
-        const userBalance = await balance.findOne({userId:user._id});
+        const userBalance = await balance.findOne({userId: user._id});
         if(!userBalance){
-            res.json({
-                message:"you are not linked with bank yet",
-            }).status(400);
+            res.status(400).json({
+                message:" You do not have any account yet"
+            });
             return;
         }
-        if(userBalance.balance < amount){
-            res.json({
-                message:"You don't have sufficient amount of money",
-                amount : userBalance.balance
-            }).status(400);
-            return;
-        }else{
+        if(userBalance.balance >= amount){
             userBalance.balance -= amount;
             await userBalance.save();
         }
-        
-        // now fetch the reciever user and its balance sheet
-        console.log(recieverFirstName,recieverLastName);
-        
-        const recieverUser = await users.findOne({firstName:recieverFirstName,lastName:recieverLastName});
-        if(!recieverUser){
-            res.json({
-                message:"no such user exists",
-            }).status(400);
+        else{
+            res.status(400).json({
+                message:"You don't have enough money to withdraw"
+            });
             return;
         }
-        const recieverbalance = await balance.findOne({userId: recieverUser._id})
-        if(!recieverbalance){
-            await balance.create({
-                userId : recieverUser._id,
-                balance : amount
-            })
-        }
-        else{
-            recieverbalance.balance += amount;
-            await recieverbalance.save();
-        }
-        res.json({
-            recieverbalance,
-            userBalance
-        }).status(200);
-        return;
     }
     catch(error){
-        res.json({
+        res.status(400).json({
             error: error.message
-        }).status(400);
+        })
         return;
     }
+
 })
+
+// @ts-ignore
+router.post("/payment", auth, async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+        const { firstName, lastName, recieverFirstName, recieverLastName, amount } = req.body;
+
+        // Find sender
+        const user = await users.findOne({ firstName, lastName }).session(session);
+        if (!user) {
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(404).json({ message: "Sender not found" });
+        }
+
+        // Fetch sender's balance
+        const userBalance = await balance.findOne({ userId: user._id }).session(session);
+        if (!userBalance) {
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(400).json({ message: "You are not linked with a bank yet" });
+        }
+
+        if (userBalance.balance < amount) {
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(400).json({ message: "Insufficient funds", balance: userBalance.balance });
+        }
+
+        // Deduct amount from sender
+        userBalance.balance -= amount;
+        await userBalance.save({ session });
+
+        // Find receiver
+        const receiverUser = await users.findOne({ firstName: recieverFirstName, lastName: recieverLastName }).session(session);
+        if (!receiverUser) {
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(404).json({ message: "Receiver not found" });
+        }
+
+        // Fetch receiver's balance
+        let receiverBalance = await balance.findOne({ userId: receiverUser._id }).session(session);
+        if (!receiverBalance) {
+            receiverBalance = new balance({ userId: receiverUser._id, balance: amount });
+        } else {
+            receiverBalance.balance += amount;
+        }
+
+        await receiverBalance.save({ session });
+
+        // Commit transaction
+        await session.commitTransaction();
+        session.endSession();
+
+        return res.status(200).json({
+            message: "Payment successful",
+            senderBalance: userBalance.balance,
+            receiverBalance: receiverBalance.balance
+        });
+
+    } catch (error) {
+        // Rollback in case of failure
+        await session.abortTransaction();
+        session.endSession();
+        console.error("Error processing payment:", error);
+        return res.status(500).json({ error: "Internal server error" });
+    }
+});
+
 
 export default router;
