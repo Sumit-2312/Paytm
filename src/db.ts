@@ -28,9 +28,16 @@ const userSchema = new Schema({
     },
 })
 
+const balanceSchema = new Schema({
+    userId : {type:objectId,ref:'users'},
+    balance: {type:Number}
+})
+
 
 const userModel =  model('users',userSchema);
 
 module.exports = {
     users: userModel,
+
+
 };
