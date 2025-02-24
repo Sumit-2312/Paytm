@@ -7,9 +7,21 @@ const {users,balance} = require('../db');
 import auth from '../auth'  
 
 
-router.get("/",auth, async(req,res)=>{
+router.get("/",auth, async(req ,res)=>{
     try{
-        const allUsers = await users.find();
+        const query = req.query.filter || "" ; // we can also access the query sent to the backend like req sent to /?filter="sumit" will have req.query.filer = sumit
+        const allUsers = await users.find({
+            $or:[  // or is used to return the users by if either of the condition satifies
+                {
+                    firstName: { $regex: query , $options: 'i' }    // regex will check if the user having firstName with substring or not
+                                                                    // options = "i" making it case insensitive
+                },
+                {
+                    lastName : { $regex:query , $options: 'i'}
+                }
+            ]
+        });
+
         if(allUsers.modifiedCount === 0){
             res.status(200).json({
                 message:"No users are present"
@@ -29,6 +41,7 @@ router.get("/",auth, async(req,res)=>{
         return;
     }
 })
+
 
 router.post('/signup', async (req,res)=>{
     const {firstName,lastName,password,email} = req.body;

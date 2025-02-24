@@ -9,7 +9,17 @@ import cors from 'cors';
 const app = express();
 app.use(cors());
 app.use(express.json());
-mongoose.connect('mongodb+srv://Sumit:f1DiiBAfTuvIZ2RU@cluster0.wpjvi.mongodb.net/Paytm');
+
+async function  main(){
+   await  mongoose.connect('mongodb+srv://Sumit:f1DiiBAfTuvIZ2RU@cluster0.wpjvi.mongodb.net/Paytm')
+   .then(()=>{
+        console.log("you are connected to the database");
+   })
+   .catch(()=>{
+        console.log("Not connected to the database");
+   })
+}
+main();
 
 
 app.use('/user',userRouter);
