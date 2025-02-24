@@ -7,37 +7,63 @@ const {users,balance} = require('../db');
 import auth from '../auth'  
 
 
-router.get("/",auth, async(req ,res)=>{
-    try{
-        const query = req.query.filter || "" ; // we can also access the query sent to the backend like req sent to /?filter="sumit" will have req.query.filer = sumit
+router.get("/", auth, async (req, res) => {
+    try {
+        const query = req.query.filter || ""; 
+
+        console.log("Query received:", query);
+
+        
         const allUsers = await users.find({
-            $or:[  // or is used to return the users by if either of the condition satifies
-                {
-                    firstName: { $regex: query , $options: 'i' }    // regex will check if the user having firstName with substring or not
-                                                                    // options = "i" making it case insensitive
-                },
-                {
-                    lastName : { $regex:query , $options: 'i'}
-                }
+            $or: [
+                { firstName: { $regex: query, $options: "i" } },
+                { lastName: { $regex: query, $options: "i" } }
             ]
         });
 
-        if(allUsers.modifiedCount === 0){
+        if (allUsers.length === 0) {
             res.status(200).json({
-                message:"No users are present"
+                message: "No users are present"
             });
             return;
         }
+
         res.status(200).json({
-            message:"Fetched all users",
+            message: "Fetched all users",
             allUsers
         });
         return;
-    }
-    catch(error){
-        res.status(400).json({
+    } catch (error) {
+        res.status(500).json({
             error: error.message
         });
+        return;
+    }
+});
+
+
+router.get('/details',auth,async(req,res)=>{
+    try{
+        const {firstName , lastName} = req.body; // we will get it throught the auth middleware
+        const user = await users.findOne({firstName,lastName});
+        const userBalance = await balance.findOne({userId:user._id})
+        if(userBalance){
+            res.status(200).json({
+                firstName: user.firstName,
+                lastName : user.lastName,
+                balance : userBalance.balance 
+            });
+            return;
+        }
+        else{
+            res.status(200).json({
+                message:"user do not  have any balance account",
+                firstName: user.firstName
+            })
+        }
+    }
+    catch(error){
+        res.json({error: error.message}).status(400);
         return;
     }
 })
@@ -130,7 +156,8 @@ router.post('/change', auth, async (req, res) => {
 // @ts-ignore
 router.post('/deposit', auth, async (req, res)=> {
     try {
-        const { firstName, lastName, amount } = req.body;
+        let { firstName, lastName, amount } = req.body;
+            amount = Number(amount);
         console.log(`Deposit request for: ${firstName} ${lastName}, Amount: ${amount}`);
 
         const user = await users.findOne({ firstName, lastName });
@@ -163,7 +190,8 @@ router.post('/deposit', auth, async (req, res)=> {
 
 router.post('/withdraw', auth, async ( req , res)=>{
     try{
-        const {amount , firstName, lastName} = req.body;
+        let {amount , firstName, lastName} = req.body;
+         amount = Number(amount);
         const user = await users.findOne({firstName,lastName});
         const userBalance = await balance.findOne({userId: user._id});
         if(!userBalance){
@@ -175,6 +203,9 @@ router.post('/withdraw', auth, async ( req , res)=>{
         if(userBalance.balance >= amount){
             userBalance.balance -= amount;
             await userBalance.save();
+            res.json({
+                message: "deducted the amount from you account"
+            })
         }
         else{
             res.status(400).json({
@@ -195,10 +226,10 @@ router.post('/withdraw', auth, async ( req , res)=>{
 // @ts-ignore
 router.post("/payment", auth, async (req, res) => {
     const session = await mongoose.startSession();
-    session.startTransaction();
+    session.startTransaction(); 
 
     try {
-        const { firstName, lastName, recieverFirstName, recieverLastName, amount } = req.body;
+        const { firstName, lastName, recieverFirstName, recieverId, amount } = req.body;
 
         // Find sender
         const user = await users.findOne({ firstName, lastName }).session(session);
@@ -227,7 +258,7 @@ router.post("/payment", auth, async (req, res) => {
         await userBalance.save({ session });
 
         // Find receiver
-        const receiverUser = await users.findOne({ firstName: recieverFirstName, lastName: recieverLastName }).session(session);
+        const receiverUser = await users.findOne({ firstName: recieverFirstName, _id: recieverId }).session(session);
         if (!receiverUser) {
             await session.abortTransaction();
             session.endSession();
@@ -235,7 +266,7 @@ router.post("/payment", auth, async (req, res) => {
         }
 
         // Fetch receiver's balance
-        let receiverBalance = await balance.findOne({ userId: receiverUser._id }).session(session);
+        let receiverBalance = await balance.findOne({ userId: recieverId }).session(session);
         if (!receiverBalance) {
             receiverBalance = new balance({ userId: receiverUser._id, balance: amount });
         } else {
